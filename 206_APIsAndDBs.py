@@ -47,20 +47,37 @@ api = tweepy.API(auth, parser=tweepy.parsers.JSONParser())
 
 CACHE_FNAME = "206_APIsAndDBs_cache.json"
 # Put the rest of your caching setup here:
-
-
+try:
+	cache_file = open(CACHE_FNAME,'r')
+	cache_contents = cache_file.read()
+	cache_file.close()
+	CACHE_DICTION = json.loads(cache_contents)
+except:
+	CACHE_DICTION = {}
+# used in testing so I'm not making a million .get_user() requests
+USER_FNAME = 'allUsersInfo.json'
+try:
+	user_cache_file = open(USER_FNAME,'r')
+	user_cache_contents = user_cache_file.read()
+	user_cache_file.close()
+	allUsersInfo = json.loads(user_cache_contents)
+except:
+	allUsersInfo = {}
 
 # Define your function get_user_tweets here:
-
-
-
-
+def get_user_tweets(screenName):
+	# if screenName includes @ symbol, get rid of it
+	if screenName[0] == '@':
+		screenName = screenName[1:]
+	if screenName in CACHE_DICTION:
+		return CACHE_DICTION[screenName]
+	else:
+		CACHE_DICTION[screenName] = api.user_timeline(screen_name=screenName, count=20)
+		return CACHE_DICTION[screenName]
 
 # Write an invocation to the function for the "umich" user timeline and 
 # save the result in a variable called umich_tweets:
-
-
-
+umich_tweets = get_user_tweets('@umich')
 
 ## Task 2 - Creating database and loading data into database
 ## You should load into the Users table:
@@ -70,14 +87,43 @@ CACHE_FNAME = "206_APIsAndDBs_cache.json"
 # mentioned in the umich timeline, that Twitter user's info should be 
 # in the Users table, etc.
 
+#create a list of all user_ids, starting with tweet author
+# mentionedUsers = []
+# for t in umich_tweets:
+# 	mentionedUsers.append(t['user']['id'])
+# 	for mentioned in t['entities']['user_mentions']:
+# 		mentionedUsers.append(mentioned['id'])
+# for u in mentionedUsers:
+# 	# avoid double requests, duplicated information
+# 	if u not in allUsersInfo:
+# 		print("RETRIEVING")
+# 		# get user info and store for insertion into table
+# 		allUsersInfo[u] = api.get_user(user_id=u)
 
+print(json.dumps(allUsersInfo, indent = 2))
+
+cache_file = open(USER_FNAME,'w')
+cache_contents = cache_file.write(json.dumps(allUsersInfo, indent=2))
+cache_file.close()
+
+conn = sqlite3.connect("206_APIsAndDBs.sqlite")
+cur = conn.cursor()
+cur.execute('DROP TABLE IF EXISTS Users')
+cur.execute('CREATE TABLE Users (user_id NUMBER, screen_name TEXT, num_favs NUMBER, description TEXT)')
+
+for u in allUsersInfo:
+	print(type(u))
+	tup = u['id'], u['screen_name'], u['favourites_count'], u['description']
+	cur.execute('INSERT INTO Tweets (user_id, screen_name, num_favs, description) VALUES (?,?,?,?)', tup)
+cur.commit()
 
 ## You should load into the Tweets table: 
 # Info about all the tweets (at least 20) that you gather from the 
 # umich timeline.
 # NOTE: Be careful that you have the correct user ID reference in 
 # the user_id column! See below hints.
-
+cur.execute('DROP TABLE IF EXISTS Tweets')
+cur.execute('CREATE TABLE Tweets (tweet_id NUMBER, text TEXT, user_posted NUMBER, time_posted DATETIME, retweets NUMBER)')
 
 ## HINT: There's a Tweepy method to get user info, so when you have a 
 ## user id or screenname you can find alllll the info you want about 
@@ -135,6 +181,11 @@ joined_data2 = True
 ### IMPORTANT: MAKE SURE TO CLOSE YOUR DATABASE CONNECTION AT THE END 
 ### OF THE FILE HERE SO YOU DO NOT LOCK YOUR DATABASE (it's fixable, 
 ### but it's a pain). ###
+cache_file = open(CACHE_FNAME,'w')
+cache_contents = cache_file.write(json.dumps(CACHE_DICTION, indent=2))
+cache_file.close()
+
+cur.close()
 
 ###### TESTS APPEAR BELOW THIS LINE ######
 ###### Note that the tests are necessary to pass, but not sufficient -- 

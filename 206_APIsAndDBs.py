@@ -2,9 +2,6 @@
 ## Project 3
 ## Building on HW7, HW8 (and some previous material!)
 
-##THIS STARTER CODE DOES NOT RUN!!
-
-
 ##OBJECTIVE:
 ## In this assignment you will be creating database and loading data 
 ## into database.  You will also be performing SQL queries on the data.
@@ -46,7 +43,6 @@ api = tweepy.API(auth, parser=tweepy.parsers.JSONParser())
 ## write the rest of the code in this file.
 
 CACHE_FNAME = "206_APIsAndDBs_cache.json"
-# Put the rest of your caching setup here:
 try:
 	cache_file = open(CACHE_FNAME,'r')
 	cache_contents = cache_file.read()
@@ -63,46 +59,46 @@ try:
 	allUsersInfo = json.loads(user_cache_contents)
 except:
 	allUsersInfo = {}
-	print("NEW USER DICT CREATED")
 
+conn = sqlite3.connect("206_APIsAndDBs.sqlite")
+cur = conn.cursor()
+cur.execute('DROP TABLE IF EXISTS Tweets')
+cur.execute('CREATE TABLE Tweets (tweet_id NUMBER, text TEXT, user_posted NUMBER, time_posted DATETIME, retweets NUMBER)')
+
+mentionedUsers = []
+
+def updateTables(userTweets):
+	conn = sqlite3.connect("206_APIsAndDBs.sqlite")
+	cur = conn.cursor()
+	global mentionedUsers
+	for t in userTweets:
+		mentionedUsers.append(t['user']['id'])
+		for mentioned in t['entities']['user_mentions']:
+			mentionedUsers.append(mentioned['id'])
+		# then insert into table
+		tup = t['id'], t['text'], t['user']['id'], t['created_at'], t['retweet_count']
+		cur.execute('INSERT INTO Tweets (tweet_id, text, user_posted, time_posted, retweets) VALUES (?,?,?,?,?)', tup)
+	conn.commit()
+
+	cache_file = open(CACHE_FNAME,'w')
+	cache_contents = cache_file.write(json.dumps(CACHE_DICTION, indent=2))
+	cache_file.close()
+	cur.close()
 # Define your function get_user_tweets here:
 def get_user_tweets(screenName):
 	# if screenName includes @ symbol, get rid of it
 	if screenName[0] == '@':
 		screenName = screenName[1:]
-	if screenName in CACHE_DICTION:
-		return CACHE_DICTION[screenName]
-	else:
+	if screenName not in CACHE_DICTION:
 		CACHE_DICTION[screenName] = api.user_timeline(screen_name=screenName, count=20)
-		return CACHE_DICTION[screenName]
+	updateTables(CACHE_DICTION[screenName])
+	return CACHE_DICTION[screenName]
 
 # Write an invocation to the function for the "umich" user timeline and 
 # save the result in a variable called umich_tweets:
+
 umich_tweets = get_user_tweets('@umich')
 
-## Task 2 - Creating database and loading data into database
-## You should load into the Users table:
-# The umich user, and all of the data about users that are mentioned 
-# in the umich timeline. 
-# NOTE: For example, if the user with the "TedXUM" screen name is 
-# mentioned in the umich timeline, that Twitter user's info should be 
-# in the Users table, etc.
-conn = sqlite3.connect("206_APIsAndDBs.sqlite")
-cur = conn.cursor()
-
-cur.execute('DROP TABLE IF EXISTS Tweets')
-cur.execute('CREATE TABLE Tweets (tweet_id NUMBER, text TEXT, user_posted NUMBER, time_posted DATETIME, retweets NUMBER)')
-
-#create a list of all user_ids, starting with tweet author
-mentionedUsers = []
-for t in umich_tweets:
-	mentionedUsers.append(t['user']['id'])
-	for mentioned in t['entities']['user_mentions']:
-		mentionedUsers.append(mentioned['id'])
-	# then insert into table to eliminate second interation later on
-	tup = t['id'], t['text'], t['user']['id'], t['created_at'], t['retweet_count']
-	cur.execute('INSERT INTO Tweets (tweet_id, text, user_posted, time_posted, retweets) VALUES (?,?,?,?,?)', tup)
-conn.commit()
 # avoid double requests, duplicated information
 if len(allUsersInfo) == 0:
 	for u in set(mentionedUsers):
@@ -121,6 +117,15 @@ for u in allUsersInfo:
 	cur.execute('INSERT INTO Users (user_id, screen_name, num_favs, description) VALUES (?,?,?,?)', tup)
 conn.commit()
 
+
+## Task 2 - Creating database and loading data into database
+## You should load into the Users table:
+# The umich user, and all of the data about users that are mentioned 
+# in the umich timeline. 
+# NOTE: For example, if the user with the "TedXUM" screen name is 
+# mentioned in the umich timeline, that Twitter user's info should be 
+# in the Users table, etc.
+
 ## You should load into the Tweets table: 
 # Info about all the tweets (at least 20) that you gather from the 
 # umich timeline.
@@ -136,7 +141,16 @@ conn.commit()
 ## text to find out which they are! Do some nested data investigation 
 ## on a dictionary that represents 1 tweet to see it!
 
-
+# cur.execute('SELECT user_id FROM Users')
+# allIDS = cur.fetchall()
+# idCounts = {}
+# for i in allIDS:
+# 	if i not in idCounts:
+# 		idCounts[i] = 0
+# 	idCounts[i] += 1
+# for n in idCounts:
+# 	if idCounts[n] > 1:
+# 		print(n + " HAS " + idCounts[n] + " INSTANCES" )
 ## Task 3 - Making queries, saving data, fetching data
 
 # All of the following sub-tasks require writing SQL statements 
@@ -151,13 +165,8 @@ users_info = cur.fetchall()
 # Save a resulting list of strings (NOT tuples, the strings inside them!) 
 # in the variable screen_names. HINT: a list comprehension will make 
 # this easier to complete! 
-
-# not necessary to make another query, we already have this data stored
-# query, however, would look like this
-# cur.execute('SELECT screen_name FROM Users')
-# users_info = [s[0] for s in cur.fetchall()]
-screen_names = [u[1] for u in users_info]
-
+cur.execute('SELECT screen_name FROM Users')
+screen_names = [s[0] for s in cur.fetchall()]
 
 # Make a query to select all of the tweets (full rows of tweet information)
 # that have been retweeted more than 10 times. Save the result 
@@ -189,11 +198,9 @@ joined_data2 = cur.fetchall()
 ### IMPORTANT: MAKE SURE TO CLOSE YOUR DATABASE CONNECTION AT THE END 
 ### OF THE FILE HERE SO YOU DO NOT LOCK YOUR DATABASE (it's fixable, 
 ### but it's a pain). ###
-cache_file = open(CACHE_FNAME,'w')
-cache_contents = cache_file.write(json.dumps(CACHE_DICTION, indent=2))
-cache_file.close()
 
 cur.close()
+conn.close()
 
 ###### TESTS APPEAR BELOW THIS LINE ######
 ###### Note that the tests are necessary to pass, but not sufficient -- 

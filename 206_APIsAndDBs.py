@@ -49,6 +49,7 @@ try:
 	cache_file.close()
 	CACHE_DICTION = json.loads(cache_contents)
 except:
+	# make cache for both users and tweets
 	CACHE_DICTION = {}
 	CACHE_DICTION['Users'] = {}
 	CACHE_DICTION['Tweets'] = {}

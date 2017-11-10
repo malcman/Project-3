@@ -50,29 +50,25 @@ try:
 	CACHE_DICTION = json.loads(cache_contents)
 except:
 	CACHE_DICTION = {}
-# used in testing so I'm not making a million .get_user() requests
-USER_FNAME = 'allUsersInfo.json'
-try:
-	user_cache_file = open(USER_FNAME,'r')
-	user_cache_contents = user_cache_file.read()
-	user_cache_file.close()
-	allUsersInfo = json.loads(user_cache_contents)
-except:
-	allUsersInfo = {}
+	CACHE_DICTION['Users'] = {}
+	CACHE_DICTION['Tweets'] = {}
 
 conn = sqlite3.connect("206_APIsAndDBs.sqlite")
 cur = conn.cursor()
 cur.execute('DROP TABLE IF EXISTS Tweets')
 cur.execute('CREATE TABLE Tweets (tweet_id NUMBER, text TEXT, user_posted NUMBER, time_posted DATETIME, retweets NUMBER)')
-
-mentionedUsers = []
+cur.execute('DROP TABLE IF EXISTS Users')
+cur.execute('CREATE TABLE Users (user_id NUMBER, screen_name TEXT, num_favs NUMBER, description TEXT)')
 
 def updateTables(userTweets):
+	global CACHE_DICTION
 	conn = sqlite3.connect("206_APIsAndDBs.sqlite")
 	cur = conn.cursor()
-	global mentionedUsers
+	mentionedUsers = []
+	# add this user_id to mentionedUsers
+	mentionedUsers.append(userTweets[0]['user']['id'])
 	for t in userTweets:
-		mentionedUsers.append(t['user']['id'])
+		# find all mentioned user_ids
 		for mentioned in t['entities']['user_mentions']:
 			mentionedUsers.append(mentioned['id'])
 		# then insert into table
@@ -80,43 +76,39 @@ def updateTables(userTweets):
 		cur.execute('INSERT INTO Tweets (tweet_id, text, user_posted, time_posted, retweets) VALUES (?,?,?,?,?)', tup)
 	conn.commit()
 
+	theseUsers = {}
+	# avoid duplicated information, get user info
+	for u in set(mentionedUsers):
+		# avoid stupid annoying key errors that will drive you insane (hypothetically of course)
+		u = str(u).strip()
+		if u not in CACHE_DICTION['Users']:
+			CACHE_DICTION['Users'][u] = api.get_user(user_id=u)
+		theseUsers[u] = CACHE_DICTION['Users'][u]
+	# put these specific users into the db
+	for u in theseUsers:
+		tup = theseUsers[u]['id'], theseUsers[u]['screen_name'], theseUsers[u]['favourites_count'], theseUsers[u]['description']
+		cur.execute('INSERT INTO Users (user_id, screen_name, num_favs, description) VALUES (?,?,?,?)', tup)
+	conn.commit()
+	cur.close()
+	# save cache file
 	cache_file = open(CACHE_FNAME,'w')
 	cache_contents = cache_file.write(json.dumps(CACHE_DICTION, indent=2))
 	cache_file.close()
-	cur.close()
 # Define your function get_user_tweets here:
 def get_user_tweets(screenName):
+	global CACHE_DICTION
 	# if screenName includes @ symbol, get rid of it
 	if screenName[0] == '@':
 		screenName = screenName[1:]
-	if screenName not in CACHE_DICTION:
-		CACHE_DICTION[screenName] = api.user_timeline(screen_name=screenName, count=20)
-	updateTables(CACHE_DICTION[screenName])
-	return CACHE_DICTION[screenName]
+	if screenName not in CACHE_DICTION['Tweets']:
+		CACHE_DICTION['Tweets'][screenName] = api.user_timeline(screen_name=screenName, count=20)
+	updateTables(CACHE_DICTION['Tweets'][screenName])
+	return CACHE_DICTION['Tweets'][screenName]
 
 # Write an invocation to the function for the "umich" user timeline and 
 # save the result in a variable called umich_tweets:
 
 umich_tweets = get_user_tweets('@umich')
-
-# avoid double requests, duplicated information
-if len(allUsersInfo) == 0:
-	for u in set(mentionedUsers):
-		# get user info and store for insertion into table
-		allUsersInfo[u] = api.get_user(user_id=u)
-
-# mostly for testing purposes
-cache_file = open(USER_FNAME,'w')
-cache_contents = cache_file.write(json.dumps(allUsersInfo, indent=2))
-cache_file.close()
-
-cur.execute('DROP TABLE IF EXISTS Users')
-cur.execute('CREATE TABLE Users (user_id NUMBER, screen_name TEXT, num_favs NUMBER, description TEXT)')
-for u in allUsersInfo:
-	tup = allUsersInfo[u]['id'], allUsersInfo[u]['screen_name'], allUsersInfo[u]['favourites_count'], allUsersInfo[u]['description']
-	cur.execute('INSERT INTO Users (user_id, screen_name, num_favs, description) VALUES (?,?,?,?)', tup)
-conn.commit()
-
 
 ## Task 2 - Creating database and loading data into database
 ## You should load into the Users table:
@@ -132,25 +124,6 @@ conn.commit()
 # NOTE: Be careful that you have the correct user ID reference in 
 # the user_id column! See below hints.
 
-## HINT: There's a Tweepy method to get user info, so when you have a 
-## user id or screenname you can find alllll the info you want about 
-## the user.
-
-## HINT: The users mentioned in each tweet are included in the tweet 
-## dictionary -- you don't need to do any manipulation of the Tweet 
-## text to find out which they are! Do some nested data investigation 
-## on a dictionary that represents 1 tweet to see it!
-
-# cur.execute('SELECT user_id FROM Users')
-# allIDS = cur.fetchall()
-# idCounts = {}
-# for i in allIDS:
-# 	if i not in idCounts:
-# 		idCounts[i] = 0
-# 	idCounts[i] += 1
-# for n in idCounts:
-# 	if idCounts[n] > 1:
-# 		print(n + " HAS " + idCounts[n] + " INSTANCES" )
 ## Task 3 - Making queries, saving data, fetching data
 
 # All of the following sub-tasks require writing SQL statements 

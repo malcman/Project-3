@@ -68,14 +68,21 @@ def updateTables(userTweets):
 	mentionedUsers = []
 	# add this user_id to mentionedUsers
 	mentionedUsers.append(userTweets[0]['user']['id'])
+	cur.execute('SELECT tweet_id FROM Tweets')
+	prevMentioned = [s[0] for s in cur.fetchall()]
+
 	for t in userTweets:
 		# find all mentioned user_ids
 		for mentioned in t['entities']['user_mentions']:
 			mentionedUsers.append(mentioned['id'])
 		# then insert into table
-		tup = t['id'], t['text'], t['user']['id'], t['created_at'], t['retweet_count']
-		cur.execute('INSERT INTO Tweets (tweet_id, text, user_posted, time_posted, retweets) VALUES (?,?,?,?,?)', tup)
+		if t['id'] not in prevMentioned:
+			tup = t['id'], t['text'], t['user']['id'], t['created_at'], t['retweet_count']
+			cur.execute('INSERT INTO Tweets (tweet_id, text, user_posted, time_posted, retweets) VALUES (?,?,?,?,?)', tup)
 	conn.commit()
+
+	cur.execute('SELECT user_id FROM Users')
+	prevMentioned = [str(s[0]) for s in cur.fetchall()]
 
 	theseUsers = {}
 	# avoid duplicated information, get user info
@@ -84,7 +91,8 @@ def updateTables(userTweets):
 		u = str(u).strip()
 		if u not in CACHE_DICTION['Users']:
 			CACHE_DICTION['Users'][u] = api.get_user(user_id=u)
-		theseUsers[u] = CACHE_DICTION['Users'][u]
+		if u not in prevMentioned:
+			theseUsers[u] = CACHE_DICTION['Users'][u]
 	# put these specific users into the db
 	for u in theseUsers:
 		tup = theseUsers[u]['id'], theseUsers[u]['screen_name'], theseUsers[u]['favourites_count'], theseUsers[u]['description']
